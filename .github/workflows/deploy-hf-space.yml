@@ -1,0 +1,59 @@
+name: Deploy to Hugging Face Space
+
+# Requires, under Settings → Secrets and variables → Actions:
+#   secret   HF_TOKEN  — Hugging Face access token with write access to the Space
+#   variable HF_SPACE  — the Space id, e.g. "your-username/sawti"
+on:
+  push:
+    branches: [master]
+    paths:
+      - "omnivoice/**"
+      - "pyproject.toml"
+      - "deploy/huggingface/**"
+      - ".github/workflows/deploy-hf-space.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-hf-space
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: ${{ vars.HF_SPACE != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Pin the Space build to this commit
+        run: |
+          sed -i \
+            -e "s|^ARG SAWTI_REPO=.*|ARG SAWTI_REPO=${GITHUB_REPOSITORY}|" \
+            -e "s|^ARG SAWTI_REF=.*|ARG SAWTI_REF=${GITHUB_SHA}|" \
+            deploy/huggingface/Dockerfile
+          grep '^ARG SAWTI_' deploy/huggingface/Dockerfile
+
+      - name: Upload to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+        run: |
+          pip install --quiet huggingface_hub
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+
+          HfApi(token=os.environ["HF_TOKEN"]).upload_folder(
+              repo_id=os.environ["HF_SPACE"],
+              repo_type="space",
+              folder_path="deploy/huggingface",
+              commit_message=f"Deploy {os.environ['GITHUB_SHA'][:7]}",
+          )
+          PY
+          echo "Deployed to https://huggingface.co/spaces/${HF_SPACE}"
