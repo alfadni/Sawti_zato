@@ -274,13 +274,14 @@ audio = model.generate(text="He plays the [B EY1 S] guitar while catching a [B A
 
 ## Command-Line Tools
 
-Three CLI entry points are provided. The CLI tools support all features available in the Python API (voice cloning, voice design, auto voice, generation parameters, etc.) — all controlled via command-line arguments.
+The following CLI entry points are provided. The CLI tools support all features available in the Python API (voice cloning, voice design, auto voice, generation parameters, etc.) — all controlled via command-line arguments.
 
 | Command | Description | Source |
 |---|---|---|
 | `omnivoice-demo` | Interactive Gradio web demo | [omnivoice/cli/demo.py](omnivoice/cli/demo.py) |
 | `omnivoice-infer` | Single-item inference | [omnivoice/cli/infer.py](omnivoice/cli/infer.py) |
 | `omnivoice-infer-batch` | Batch inference across multiple GPUs | [omnivoice/cli/infer_batch.py](omnivoice/cli/infer_batch.py) |
+| `omnivoice-web` | Simple web page + HTTP API (Sawti) | [omnivoice/web/server.py](omnivoice/web/server.py) |
 
 ### Demo
 
@@ -289,6 +290,26 @@ omnivoice-demo --ip 0.0.0.0 --port 8001
 ```
 
 Provides a web UI for voice cloning and voice design. See `omnivoice-demo --help` for all options.
+
+### Simple Web Page (Sawti)
+
+A lightweight single-page UI plus a JSON/WAV HTTP API, safer by default than the Gradio demo:
+
+```bash
+omnivoice-web --model k2-fsa/OmniVoice --port 8002          # http://127.0.0.1:8002
+SAWTI_API_KEY=change-me omnivoice-web --host 0.0.0.0         # expose on LAN, key required
+```
+
+- Binds to `127.0.0.1` by default; `--api-key` (or `SAWTI_API_KEY`) makes every request require an `X-API-Key` header.
+- Text up to 2000 characters; reference audio 1–30 s, max 10 MB (WAV/FLAC/OGG/MP3/M4A).
+- Voice cloning requires an explicit consent confirmation; one generation runs at a time (others wait up to 120 s, then get `503`).
+- Logs metadata only (mode, language, length, timing) — never the input text.
+
+API: `POST /api/tts` (multipart form: `text`, `mode`=`auto|design|clone`, `language`, `instruct`, `ref_audio`, `ref_text`, `consent`, `speed`, `duration`, `num_step`) returns `audio/wav`; errors return `{"error": code, "message": ...}`.
+
+```bash
+curl -X POST http://127.0.0.1:8002/api/tts -F text="مرحبا بكم في صوتي" -F language=arb -o out.wav
+```
 
 ### Single Inference
 

@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sawti TTS</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #5d6673;
+    --border: #dde1e6; --accent: #0f6e5a; --accent-text: #ffffff;
+    --accent-soft: #e3f2ee; --danger: #b42318; --danger-soft: #fdecea;
+    --ok: #12805c; --warn: #9a6700; --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111417; --card: #1a1e23; --text: #e7eaee; --muted: #9aa4b0;
+      --border: #2c333b; --accent: #3fb894; --accent-text: #0c1a15;
+      --accent-soft: #173229; --danger: #ff8a80; --danger-soft: #3a1d1b;
+      --ok: #3fb894; --warn: #e3b341;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans Arabic", sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  h1 { font-size: 1.4rem; margin: 0; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  .pill { font-size: .8rem; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+  .pill.ok { color: var(--ok); border-color: var(--ok); }
+  .pill.bad { color: var(--danger); border-color: var(--danger); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+  label { display: block; font-weight: 600; margin: 0 0 6px; }
+  .hint { color: var(--muted); font-size: .85rem; font-weight: 400; }
+  textarea, input[type=text], input[type=password], input[type=number], select {
+    width: 100%; font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px;
+  }
+  textarea { min-height: 120px; resize: vertical; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+  .field { margin-bottom: 14px; }
+  .tabs { display: flex; gap: 6px; background: var(--bg); padding: 4px; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 14px; }
+  .tabs button { flex: 1; border: 0; background: transparent; color: var(--muted); font: inherit; font-weight: 600; padding: 8px; border-radius: 7px; cursor: pointer; }
+  .tabs button[aria-selected=true] { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chips button { font: inherit; font-size: .82rem; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
+  .counter { text-align: end; font-size: .8rem; color: var(--muted); margin-top: 4px; }
+  .counter.over { color: var(--danger); }
+  .check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; }
+  .check input { margin-top: 4px; }
+  details summary { cursor: pointer; font-weight: 600; }
+  details .row { margin-top: 12px; }
+  .primary { width: 100%; font: inherit; font-weight: 700; padding: 12px; border: 0; border-radius: 8px; background: var(--accent); color: var(--accent-text); cursor: pointer; }
+  .primary:disabled { opacity: .6; cursor: progress; }
+  .alert { border-radius: 8px; padding: 10px 12px; margin-top: 12px; background: var(--danger-soft); color: var(--danger); display: none; }
+  .alert.show { display: block; }
+  .result audio { width: 100%; margin: 8px 0; }
+  .meta { color: var(--muted); font-size: .85rem; display: flex; flex-wrap: wrap; gap: 14px; }
+  .meta a { color: var(--accent); }
+  .history { list-style: none; padding: 0; margin: 0; }
+  .history li { border-top: 1px solid var(--border); padding: 10px 0; }
+  .history li:first-child { border-top: 0; }
+  .history .snip { font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .notice { font-size: .8rem; color: var(--muted); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Sawti <span>· صوتي</span></h1>
+    <span id="status" class="pill">Connecting…</span>
+  </header>
+
+  <div class="card" id="keyCard" hidden>
+    <label for="apiKey">API key <span class="hint">— required by this server</span></label>
+    <input id="apiKey" type="password" autocomplete="off" placeholder="Paste your API key">
+  </div>
+
+  <form id="form" class="card" novalidate>
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" data-mode="auto" aria-selected="true">Auto voice</button>
+      <button type="button" role="tab" data-mode="design" aria-selected="false">Design a voice</button>
+      <button type="button" role="tab" data-mode="clone" aria-selected="false">Clone a voice</button>
+    </div>
+
+    <div class="field">
+      <label for="text">Text to speak <span class="hint">— النص المراد نطقه</span></label>
+      <textarea id="text" dir="auto" placeholder="Type or paste text… اكتب النص هنا"></textarea>
+      <div class="chips" aria-label="Insert expression">
+        <button type="button" data-tag="[laughter]">+ laughter</button>
+        <button type="button" data-tag="[sigh]">+ sigh</button>
+        <button type="button" data-tag="[surprise-ah]">+ surprise</button>
+        <button type="button" data-tag="[question-en]">+ question</button>
+      </div>
+      <div id="counter" class="counter">0 / 2000</div>
+    </div>
+
+    <div class="field">
+      <label for="language">Language <span class="hint">— setting it improves accuracy</span></label>
+      <select id="language"><option value="">Auto-detect</option></select>
+    </div>
+
+    <!-- Voice design -->
+    <div id="designPanel" hidden>
+      <div class="row">
+        <div class="field"><label for="gender">Gender</label>
+          <select id="gender" data-attr><option value="">Any</option><option>male</option><option>female</option></select></div>
+        <div class="field"><label for="age">Age</label>
+          <select id="age" data-attr><option value="">Any</option><option>child</option><option>teenager</option><option>young adult</option><option>middle-aged</option><option>elderly</option></select></div>
+        <div class="field"><label for="pitch">Pitch</label>
+          <select id="pitch" data-attr><option value="">Any</option><option>very low pitch</option><option>low pitch</option><option>moderate pitch</option><option>high pitch</option><option>very high pitch</option></select></div>
+        <div class="field"><label for="accent">English accent <span class="hint">— English text only</span></label>
+          <select id="accent" data-attr><option value="">None</option><option>american accent</option><option>british accent</option><option>australian accent</option><option>canadian accent</option><option>indian accent</option></select></div>
+      </div>
+      <div class="field">
+        <label class="check"><input type="checkbox" id="whisper"> Whisper style</label>
+      </div>
+      <div class="field">
+        <label for="instruct">Voice description <span class="hint">— built from your choices; you can edit it</span></label>
+        <input id="instruct" type="text" maxlength="200" placeholder="e.g. female, young adult, moderate pitch">
+      </div>
+      <p class="notice">Voice design is trained on English and Chinese. For Arabic it works but can be less stable — voice cloning gives the most reliable results.</p>
+    </div>
+
+    <!-- Voice clone -->
+    <div id="clonePanel" hidden>
+      <div class="field">
+        <label for="refAudio">Reference audio <span class="hint">— 3–10 s of clean speech; WAV, FLAC, OGG, MP3, M4A; max 10 MB</span></label>
+        <input id="refAudio" type="file" accept=".wav,.flac,.ogg,.mp3,.m4a,audio/*">
+        <audio id="refPreview" controls hidden style="width:100%;margin-top:8px"></audio>
+        <div id="refInfo" class="hint"></div>
+      </div>
+      <div class="field">
+        <label for="refText">Transcript of the reference <span id="refTextHint" class="hint">— optional, auto-transcribed if empty</span></label>
+        <textarea id="refText" dir="auto" style="min-height:60px" placeholder="Exactly what is said in the reference audio"></textarea>
+      </div>
+      <div class="field">
+        <label class="check"><input type="checkbox" id="consent">
+          <span>I confirm the speaker in this recording has given consent for their voice to be cloned, and I will not use it for impersonation or fraud.</span></label>
+      </div>
+    </div>
+
+    <details class="field">
+      <summary>Advanced settings</summary>
+      <div class="row">
+        <div class="field"><label for="speed">Speed: <span id="speedVal">1.00×</span></label>
+          <input id="speed" type="range" min="0.5" max="1.5" step="0.05" value="1" style="width:100%"></div>
+        <div class="field"><label for="duration">Fixed length (seconds) <span class="hint">— overrides speed</span></label>
+          <input id="duration" type="number" min="0.5" max="120" step="0.5" placeholder="Auto"></div>
+        <div class="field"><label for="steps">Quality steps: <span id="stepsVal">32</span></label>
+          <input id="steps" type="range" min="8" max="64" step="4" value="32" style="width:100%">
+          <div class="hint">16 is faster, 32 is the default.</div></div>
+      </div>
+    </details>
+
+    <button id="submit" class="primary" type="submit">Generate speech</button>
+    <div id="error" class="alert" role="alert"></div>
+  </form>
+
+  <section class="card result" id="resultCard" hidden aria-live="polite">
+    <label>Result</label>
+    <audio id="player" controls></audio>
+    <div class="meta" id="meta"></div>
+  </section>
+
+  <section class="card" id="historyCard" hidden>
+    <label>Recent <span class="hint">— kept in this tab only</span></label>
+    <ul class="history" id="history"></ul>
+  </section>
+
+  <p class="notice">Generated audio is synthetic. Do not use it to impersonate anyone or to pass voice-based identity checks.</p>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const PINNED = ["arb", "ary", "arz", "afb", "apc", "acw", "apd", "en"];
+  const MAX_TEXT = 2000;
+  let mode = "auto";
+  let health = null;
+  let refSeconds = null;
+  const history = [];
+
+  const storage = {
+    get(k) { try { return sessionStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { sessionStorage.setItem(k, v); } catch {} },
+  };
+
+  function showError(msg) { const e = $("error"); e.textContent = msg; e.classList.add("show"); }
+  function clearError() { $("error").classList.remove("show"); }
+  function headers() { const k = $("apiKey").value.trim(); return k ? { "X-API-Key": k } : {}; }
+
+  async function init() {
+    try {
+      const r = await fetch("api/health");
+      health = await r.json();
+      $("status").textContent = health.busy ? "Busy" : "Ready";
+      $("status").className = "pill ok";
+      if (health.auth_required) {
+        $("keyCard").hidden = false;
+        $("apiKey").value = storage.get("sawti_key") || "";
+      }
+      if (!health.asr_enabled) {
+        $("refTextHint").textContent = "— required (auto-transcription is off)";
+      }
+    } catch {
+      $("status").textContent = "Server unreachable";
+      $("status").className = "pill bad";
+    }
+    try {
+      const r = await fetch("api/languages");
+      const { languages } = await r.json();
+      const byId = Object.fromEntries(languages.map((l) => [l.id, l]));
+      const sel = $("language");
+      const pinned = document.createElement("optgroup"); pinned.label = "Common";
+      PINNED.filter((id) => byId[id]).forEach((id) => pinned.append(new Option(`${byId[id].name} (${id})`, id)));
+      const all = document.createElement("optgroup"); all.label = "All languages";
+      languages.forEach((l) => all.append(new Option(`${l.name} (${l.id})`, l.id)));
+      sel.append(pinned, all);
+    } catch { /* keep Auto-detect only */ }
+  }
+
+  // Mode tabs
+  document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => {
+    mode = b.dataset.mode;
+    document.querySelectorAll(".tabs button").forEach((x) => x.setAttribute("aria-selected", x === b));
+    $("designPanel").hidden = mode !== "design";
+    $("clonePanel").hidden = mode !== "clone";
+    clearError();
+  }));
+
+  // Text counter and expression tags
+  function updateCounter() {
+    const n = $("text").value.length;
+    $("counter").textContent = `${n} / ${MAX_TEXT}`;
+    $("counter").classList.toggle("over", n > MAX_TEXT);
+  }
+  $("text").addEventListener("input", updateCounter);
+  document.querySelectorAll("[data-tag]").forEach((b) => b.addEventListener("click", () => {
+    const t = $("text"); const pos = t.selectionStart ?? t.value.length;
+    t.value = t.value.slice(0, pos) + b.dataset.tag + " " + t.value.slice(pos);
+    t.focus(); updateCounter();
+  }));
+
+  // Voice design: build the description from the dropdowns
+  function buildInstruct() {
+    const parts = [...document.querySelectorAll("[data-attr]")].map((s) => s.value).filter(Boolean);
+    if ($("whisper").checked) parts.push("whisper");
+    $("instruct").value = parts.join(", ");
+  }
+  document.querySelectorAll("[data-attr]").forEach((s) => s.addEventListener("change", buildInstruct));
+  $("whisper").addEventListener("change", buildInstruct);
+
+  // Voice clone: preview and length check on the client
+  $("refAudio").addEventListener("change", () => {
+    const f = $("refAudio").files[0];
+    refSeconds = null; $("refInfo").textContent = "";
+    const p = $("refPreview");
+    if (!f) { p.hidden = true; return; }
+    if (f.size > 10 * 1024 * 1024) { $("refInfo").textContent = "File is larger than 10 MB."; }
+    p.src = URL.createObjectURL(f); p.hidden = false;
+    p.onloadedmetadata = () => {
+      refSeconds = p.duration;
+      let msg = `${refSeconds.toFixed(1)} s`;
+      if (refSeconds < 3) msg += " — short; 3–10 s gives better cloning.";
+      else if (refSeconds > 10) msg += " — long; 3–10 s is faster and usually better.";
+      $("refInfo").textContent = msg;
+    };
+  });
+
+  $("speed").addEventListener("input", () => $("speedVal").textContent = Number($("speed").value).toFixed(2) + "×");
+  $("steps").addEventListener("input", () => $("stepsVal").textContent = $("steps").value);
+  $("apiKey").addEventListener("change", () => storage.set("sawti_key", $("apiKey").value.trim()));
+
+  function validate() {
+    const text = $("text").value.trim();
+    if (!text) return "Please enter the text to speak.";
+    if (text.length > MAX_TEXT) return `Text is over ${MAX_TEXT} characters — split it into parts.`;
+    if (health?.auth_required && !$("apiKey").value.trim()) return "Enter the API key.";
+    if (mode === "design" && !$("instruct").value.trim()) return "Choose at least one voice attribute, or type a description.";
+    if (mode === "clone") {
+      const f = $("refAudio").files[0];
+      if (!f) return "Upload a reference audio file.";
+      if (f.size > 10 * 1024 * 1024) return "Reference audio must be 10 MB or smaller.";
+      if (refSeconds !== null && (refSeconds < 1 || refSeconds > 30)) return "Reference audio must be between 1 and 30 seconds.";
+      if (health && !health.asr_enabled && !$("refText").value.trim()) return "Enter the transcript of the reference audio.";
+      if (!$("consent").checked) return "Please confirm you have the speaker's consent.";
+    }
+    return null;
+  }
+
+  $("form").addEventListener("submit", async (ev) => {
+    ev.preventDefault(); clearError();
+    const problem = validate();
+    if (problem) { showError(problem); return; }
+
+    const fd = new FormData();
+    fd.append("text", $("text").value.trim());
+    fd.append("mode", mode);
+    fd.append("language", $("language").value);
+    if ($("duration").value) fd.append("duration", $("duration").value);
+    else fd.append("speed", $("speed").value);
+    fd.append("num_step", $("steps").value);
+    if (mode === "design") fd.append("instruct", $("instruct").value.trim());
+    if (mode === "clone") {
+      fd.append("ref_audio", $("refAudio").files[0]);
+      fd.append("ref_text", $("refText").value.trim());
+      fd.append("consent", $("consent").checked ? "true" : "false");
+    }
+
+    const btn = $("submit"); btn.disabled = true;
+    const t0 = performance.now();
+    const tick = setInterval(() => btn.textContent = `Generating… ${((performance.now() - t0) / 1000).toFixed(0)} s`, 500);
+    btn.textContent = "Generating…";
+    try {
+      const r = await fetch("api/tts", { method: "POST", body: fd, headers: headers() });
+      if (!r.ok) {
+        let msg = `Request failed (${r.status}).`;
+        try { const j = await r.json(); msg = j.message || msg; } catch {}
+        if (r.status === 401) { storage.set("sawti_key", ""); $("keyCard").hidden = false; }
+        throw new Error(msg);
+      }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const audioSec = Number(r.headers.get("X-Audio-Seconds"));
+      const genSec = Number(r.headers.get("X-Elapsed-Seconds"));
+      const name = `sawti-${new Date().toISOString().replace(/[:.]/g, "-")}.wav`;
+      $("player").src = url; $("resultCard").hidden = false;
+      $("player").play().catch(() => {});
+      $("meta").innerHTML = "";
+      const meta = [`Audio ${audioSec.toFixed(1)} s`, `Generated in ${genSec.toFixed(1)} s`];
+      if (audioSec > 0) meta.push(`RTF ${(genSec / audioSec).toFixed(3)}`);
+      meta.forEach((m) => { const s = document.createElement("span"); s.textContent = m; $("meta").append(s); });
+      const a = document.createElement("a"); a.href = url; a.download = name; a.textContent = "Download WAV";
+      $("meta").append(a);
+      addHistory($("text").value.trim(), url, name);
+    } catch (e) {
+      showError(e.message === "Failed to fetch" ? "Could not reach the server. Check that it is running." : e.message);
+    } finally {
+      clearInterval(tick); btn.disabled = false; btn.textContent = "Generate speech";
+    }
+  });
+
+  function addHistory(text, url, name) {
+    history.unshift({ text, url, name });
+    while (history.length > 5) URL.revokeObjectURL(history.pop().url);
+    const ul = $("history"); ul.innerHTML = "";
+    history.forEach((h) => {
+      const li = document.createElement("li");
+      const d = document.createElement("div"); d.className = "snip"; d.dir = "auto"; d.textContent = h.text;
+      const au = document.createElement("audio"); au.controls = true; au.src = h.url; au.style.width = "100%";
+      li.append(d, au); ul.append(li);
+    });
+    $("historyCard").hidden = false;
+  }
+
+  updateCounter();
+  init();
+})();
+</script>
+</body>
+</html>
