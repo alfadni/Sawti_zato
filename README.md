@@ -311,6 +311,8 @@ API: `POST /api/tts` (multipart form: `text`, `mode`=`auto|design|clone`, `langu
 curl -X POST http://127.0.0.1:8002/api/tts -F text="مرحبا بكم في صوتي" -F language=arb -o out.wav
 ```
 
+To deploy it with a public HTTPS link on a GPU, see [docs/deploy_huggingface.md](docs/deploy_huggingface.md); to serve the page from Vercel on your own domain, see [docs/deploy_vercel.md](docs/deploy_vercel.md).
+
 ### Single Inference
 
 ```bash

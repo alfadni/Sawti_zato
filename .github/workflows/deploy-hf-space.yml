@@ -1,0 +1,98 @@
+name: Deploy to Hugging Face Space
+
+# Creates (if needed), configures and deploys the Sawti Docker Space.
+#
+# Settings → Secrets and variables → Actions:
+#   secret   HF_TOKEN            (required) Hugging Face token that can create/write
+#                                the Space; without it the job does nothing
+#   secret   SAWTI_API_KEY       (required to start) synced to the Space as a secret
+#   variable HF_SPACE            Space id, default "alfadni/sawti"
+#   variable HF_SPACE_HARDWARE   e.g. "t4-small" (needs billing on Hugging Face)
+#   variable HF_SPACE_SLEEP      seconds of inactivity before sleeping, e.g. "3600"
+on:
+  push:
+    branches: [master]
+    paths:
+      - "omnivoice/**"
+      - "pyproject.toml"
+      - "deploy/huggingface/**"
+      - ".github/workflows/deploy-hf-space.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-hf-space
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      SAWTI_API_KEY: ${{ secrets.SAWTI_API_KEY }}
+      HF_SPACE: ${{ vars.HF_SPACE || 'alfadni/sawti' }}
+      HF_SPACE_HARDWARE: ${{ vars.HF_SPACE_HARDWARE }}
+      HF_SPACE_SLEEP: ${{ vars.HF_SPACE_SLEEP }}
+    steps:
+      - name: Check configuration
+        id: config
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::notice::HF_TOKEN secret not set; skipping Hugging Face deploy."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -z "$SAWTI_API_KEY" ]; then
+            echo "::warning::SAWTI_API_KEY secret not set; the Space will refuse to start until it has one."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.config.outputs.enabled == 'true'
+
+      - uses: actions/setup-python@v5
+        if: steps.config.outputs.enabled == 'true'
+        with:
+          python-version: "3.x"
+
+      - name: Pin the Space build to this commit
+        if: steps.config.outputs.enabled == 'true'
+        run: |
+          sed -i \
+            -e "s|^ARG SAWTI_REPO=.*|ARG SAWTI_REPO=${GITHUB_REPOSITORY}|" \
+            -e "s|^ARG SAWTI_REF=.*|ARG SAWTI_REF=${GITHUB_SHA}|" \
+            deploy/huggingface/Dockerfile
+          grep '^ARG SAWTI_' deploy/huggingface/Dockerfile
+
+      - name: Create, configure and upload the Space
+        if: steps.config.outputs.enabled == 'true'
+        run: |
+          pip install --quiet huggingface_hub
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          space = os.environ["HF_SPACE"]
+
+          # Public so Vercel can forward /api to it; access is gated by the API key.
+          api.create_repo(
+              space, repo_type="space", space_sdk="docker", private=False, exist_ok=True
+          )
+          if os.environ.get("SAWTI_API_KEY"):
+              api.add_space_secret(space, "SAWTI_API_KEY", os.environ["SAWTI_API_KEY"])
+          if os.environ.get("HF_SPACE_HARDWARE"):
+              api.request_space_hardware(space, os.environ["HF_SPACE_HARDWARE"])
+          if os.environ.get("HF_SPACE_SLEEP"):
+              api.set_space_sleep_time(space, int(os.environ["HF_SPACE_SLEEP"]))
+
+          api.upload_folder(
+              repo_id=space,
+              repo_type="space",
+              folder_path="deploy/huggingface",
+              commit_message=f"Deploy {os.environ['GITHUB_SHA'][:7]}",
+          )
+          PY
+          echo "Deployed to https://huggingface.co/spaces/${HF_SPACE}"

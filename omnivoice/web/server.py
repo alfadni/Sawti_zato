@@ -355,6 +355,13 @@ def main(argv=None) -> int:
     )
     args = build_parser().parse_args(argv)
 
+    if os.environ.get("SAWTI_REQUIRE_API_KEY") and not args.api_key:
+        logger.error(
+            "SAWTI_REQUIRE_API_KEY is set but no API key was given; refusing to "
+            "start. Set SAWTI_API_KEY (e.g. as a Space secret) or pass --api-key."
+        )
+        return 1
+
     if args.host not in ("127.0.0.1", "localhost", "::1") and not args.api_key:
         logger.warning(
             "Binding to %s without --api-key: anyone on the network can clone voices.",

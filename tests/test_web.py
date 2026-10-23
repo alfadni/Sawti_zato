@@ -181,3 +181,11 @@ def test_generation_failure_hides_internal_error():
     assert r.status_code == 500
     assert r.json()["error"] == "generation_failed"
     assert "CUDA" not in r.text
+
+
+def test_main_refuses_to_start_without_key_when_required(monkeypatch):
+    from omnivoice.web.server import main
+
+    monkeypatch.setenv("SAWTI_REQUIRE_API_KEY", "1")
+    monkeypatch.delenv("SAWTI_API_KEY", raising=False)
+    assert main(["--host", "0.0.0.0"]) == 1

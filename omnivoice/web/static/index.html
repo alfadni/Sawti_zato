@@ -195,23 +195,34 @@
   function clearError() { $("error").classList.remove("show"); }
   function headers() { const k = $("apiKey").value.trim(); return k ? { "X-API-Key": k } : {}; }
 
-  async function init() {
+  // The backend may be asleep (e.g. a Hugging Face Space), in which case the
+  // health check returns a non-JSON "starting" page: keep retrying.
+  async function checkHealth() {
     try {
-      const r = await fetch("api/health");
+      const r = await fetch("api/health", { cache: "no-store" });
+      const isJson = (r.headers.get("content-type") || "").includes("application/json");
+      if (!r.ok || !isJson) throw new Error("starting");
       health = await r.json();
-      $("status").textContent = health.busy ? "Busy" : "Ready";
-      $("status").className = "pill ok";
-      if (health.auth_required) {
-        $("keyCard").hidden = false;
-        $("apiKey").value = storage.get("sawti_key") || "";
-      }
-      if (!health.asr_enabled) {
-        $("refTextHint").textContent = "— required (auto-transcription is off)";
-      }
-    } catch {
-      $("status").textContent = "Server unreachable";
+    } catch (e) {
+      health = null;
+      $("status").textContent = e.message === "starting" ? "Starting up…" : "Server unreachable";
       $("status").className = "pill bad";
+      setTimeout(checkHealth, 15000);
+      return;
     }
+    $("status").textContent = health.busy ? "Busy" : "Ready";
+    $("status").className = "pill ok";
+    if (health.auth_required) {
+      $("keyCard").hidden = false;
+      $("apiKey").value = $("apiKey").value || storage.get("sawti_key") || "";
+    }
+    if (!health.asr_enabled) {
+      $("refTextHint").textContent = "— required (auto-transcription is off)";
+    }
+    if ($("language").options.length === 1) loadLanguages();
+  }
+
+  async function loadLanguages() {
     try {
       const r = await fetch("api/languages");
       const { languages } = await r.json();
@@ -320,7 +331,9 @@
     try {
       const r = await fetch("api/tts", { method: "POST", body: fd, headers: headers() });
       if (!r.ok) {
-        let msg = `Request failed (${r.status}).`;
+        let msg = r.status >= 502 && r.status <= 504
+          ? "The server is starting up or busy. Please try again in a minute."
+          : `Request failed (${r.status}).`;
         try { const j = await r.json(); msg = j.message || msg; } catch {}
         if (r.status === 401) { storage.set("sawti_key", ""); $("keyCard").hidden = false; }
         throw new Error(msg);
@@ -360,7 +373,7 @@
   }
 
   updateCounter();
-  init();
+  checkHealth();
 })();
 </script>
 </body>
